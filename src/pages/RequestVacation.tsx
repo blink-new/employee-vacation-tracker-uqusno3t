@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -10,6 +10,7 @@ import { CalendarIcon, Plus } from 'lucide-react'
 import { format, differenceInDays, addDays } from 'date-fns'
 import { cn } from '../lib/utils'
 import { useToast } from '../hooks/use-toast'
+import { blink } from '../blink/client'
 
 interface User {
   id: string
@@ -26,7 +27,38 @@ export function RequestVacation({ user }: RequestVacationProps) {
   const [endDate, setEndDate] = useState<Date>()
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [remainingDays, setRemainingDays] = useState(25)
   const { toast } = useToast()
+
+  useEffect(() => {
+    const loadEmployeeData = async () => {
+      try {
+        const employees = await blink.db.employees.list({
+          where: { userId: user.id },
+          limit: 1
+        })
+
+        if (employees.length > 0) {
+          const employee = employees[0]
+          const requests = await blink.db.vacationRequests.list({
+            where: { userId: user.id }
+          })
+
+          const usedDays = requests
+            .filter(r => r.status === 'approved')
+            .reduce((sum, r) => sum + r.daysRequested, 0)
+
+          setRemainingDays(employee.vacationDaysTotal - usedDays)
+        }
+      } catch (error) {
+        console.error('Error loading employee data:', error)
+      }
+    }
+
+    if (user?.id) {
+      loadEmployeeData()
+    }
+  }, [user?.id])
 
   const calculateDays = () => {
     if (startDate && endDate) {
@@ -70,8 +102,16 @@ export function RequestVacation({ user }: RequestVacationProps) {
     setIsSubmitting(true)
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      // Create vacation request in database
+      await blink.db.vacationRequests.create({
+        userId: user.id,
+        employeeId: user.id, // Using user.id as employee ID for simplicity
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+        daysRequested: calculateDays(),
+        reason: reason.trim(),
+        status: 'pending'
+      })
       
       toast({
         title: "Request Submitted",
@@ -83,6 +123,7 @@ export function RequestVacation({ user }: RequestVacationProps) {
       setEndDate(undefined)
       setReason('')
     } catch (error) {
+      console.error('Error submitting request:', error)
       toast({
         title: "Error",
         description: "Failed to submit request. Please try again.",
@@ -229,7 +270,7 @@ export function RequestVacation({ user }: RequestVacationProps) {
             <p>• Vacation requests require manager approval</p>
             <p>• You'll receive an email notification when your request is reviewed</p>
             <p>• Requests should be submitted at least 2 weeks in advance when possible</p>
-            <p>• You currently have <span className="font-semibold text-primary">17 vacation days</span> remaining this year</p>
+            <p>• You currently have <span className="font-semibold text-primary">{remainingDays} vacation days</span> remaining this year</p>
           </CardContent>
         </Card>
       </div>

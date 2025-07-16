@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { CheckCircle, XCircle, AlertCircle, Search, Filter, Calendar, MoreHorizontal } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu'
 import { format } from 'date-fns'
+import { blink } from '../blink/client'
 
 interface User {
   id: string
@@ -21,6 +22,8 @@ interface MyRequestsProps {
 
 interface VacationRequest {
   id: string
+  userId: string
+  employeeId: string
   startDate: string
   endDate: string
   daysRequested: number
@@ -35,62 +38,28 @@ interface VacationRequest {
 export function MyRequests({ user }: MyRequestsProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [requests, setRequests] = useState<VacationRequest[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const [requests] = useState<VacationRequest[]>([
-    {
-      id: '1',
-      startDate: '2024-08-15',
-      endDate: '2024-08-19',
-      daysRequested: 5,
-      reason: 'Summer vacation with family',
-      status: 'approved',
-      approvedBy: 'Sarah Johnson',
-      createdAt: '2024-07-10T10:00:00Z',
-      updatedAt: '2024-07-12T14:30:00Z'
-    },
-    {
-      id: '2',
-      startDate: '2024-09-02',
-      endDate: '2024-09-02',
-      daysRequested: 1,
-      reason: 'Personal day for medical appointment',
-      status: 'pending',
-      createdAt: '2024-07-15T09:15:00Z',
-      updatedAt: '2024-07-15T09:15:00Z'
-    },
-    {
-      id: '3',
-      startDate: '2024-12-23',
-      endDate: '2024-12-30',
-      daysRequested: 6,
-      reason: 'Holiday break with extended family',
-      status: 'pending',
-      createdAt: '2024-07-16T16:45:00Z',
-      updatedAt: '2024-07-16T16:45:00Z'
-    },
-    {
-      id: '4',
-      startDate: '2024-06-10',
-      endDate: '2024-06-12',
-      daysRequested: 3,
-      reason: 'Wedding anniversary trip',
-      status: 'approved',
-      approvedBy: 'Sarah Johnson',
-      createdAt: '2024-05-20T11:20:00Z',
-      updatedAt: '2024-05-22T08:45:00Z'
-    },
-    {
-      id: '5',
-      startDate: '2024-04-01',
-      endDate: '2024-04-01',
-      daysRequested: 1,
-      reason: 'Moving day',
-      status: 'denied',
-      managerNotes: 'Conflicts with project deadline. Please reschedule.',
-      createdAt: '2024-03-15T13:30:00Z',
-      updatedAt: '2024-03-18T10:15:00Z'
+  useEffect(() => {
+    const loadRequests = async () => {
+      try {
+        const userRequests = await blink.db.vacationRequests.list({
+          where: { userId: user.id },
+          orderBy: { createdAt: 'desc' }
+        })
+        setRequests(userRequests)
+      } catch (error) {
+        console.error('Error loading requests:', error)
+      } finally {
+        setLoading(false)
+      }
     }
-  ])
+
+    if (user?.id) {
+      loadRequests()
+    }
+  }, [user?.id])
 
   const filteredRequests = requests.filter(request => {
     const matchesSearch = request.reason.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -130,6 +99,29 @@ export function MyRequests({ user }: MyRequestsProps) {
     pending: requests.filter(r => r.status === 'pending').length,
     approved: requests.filter(r => r.status === 'approved').length,
     denied: requests.filter(r => r.status === 'denied').length
+  }
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-foreground">My Requests</h1>
+          <p className="text-muted-foreground mt-2">Loading your vacation requests...</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <div className="animate-pulse">
+                  <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+                  <div className="h-8 bg-muted rounded w-1/2"></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -231,65 +223,83 @@ export function MyRequests({ user }: MyRequestsProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date Range</TableHead>
-                <TableHead>Days</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRequests.map((request) => (
-                <TableRow key={request.id}>
-                  <TableCell>
-                    <div className="font-medium">
-                      {format(new Date(request.startDate), 'MMM d')} - {format(new Date(request.endDate), 'MMM d, yyyy')}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-center font-medium">
-                      {request.daysRequested}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="max-w-[200px] truncate" title={request.reason}>
-                      {request.reason}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center space-x-2">
-                      {getStatusIcon(request.status)}
-                      {getStatusBadge(request.status)}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm text-muted-foreground">
-                      {format(new Date(request.createdAt), 'MMM d, yyyy')}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Details</DropdownMenuItem>
-                        {request.status === 'pending' && (
-                          <DropdownMenuItem className="text-red-600">Cancel Request</DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+          {filteredRequests.length === 0 ? (
+            <div className="text-center py-12">
+              <Calendar className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">No vacation requests found</h3>
+              <p className="text-muted-foreground mb-4">
+                {requests.length === 0 
+                  ? "You haven't submitted any vacation requests yet."
+                  : "No requests match your current filters."
+                }
+              </p>
+              {requests.length === 0 && (
+                <Button onClick={() => window.location.href = '/request'}>
+                  Submit Your First Request
+                </Button>
+              )}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date Range</TableHead>
+                  <TableHead>Days</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Submitted</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredRequests.map((request) => (
+                  <TableRow key={request.id}>
+                    <TableCell>
+                      <div className="font-medium">
+                        {format(new Date(request.startDate), 'MMM d')} - {format(new Date(request.endDate), 'MMM d, yyyy')}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-center font-medium">
+                        {request.daysRequested}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="max-w-[200px] truncate" title={request.reason}>
+                        {request.reason}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center space-x-2">
+                        {getStatusIcon(request.status)}
+                        {getStatusBadge(request.status)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm text-muted-foreground">
+                        {format(new Date(request.createdAt), 'MMM d, yyyy')}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem>View Details</DropdownMenuItem>
+                          {request.status === 'pending' && (
+                            <DropdownMenuItem className="text-red-600">Cancel Request</DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

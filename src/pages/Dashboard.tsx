@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Calendar, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+import { blink } from '../blink/client'
 
 interface User {
   id: string
@@ -15,6 +16,7 @@ interface DashboardProps {
 
 interface VacationRequest {
   id: string
+  userId: string
   startDate: string
   endDate: string
   daysRequested: number
@@ -23,45 +25,107 @@ interface VacationRequest {
   createdAt: string
 }
 
+interface Employee {
+  id: string
+  userId: string
+  email: string
+  displayName?: string
+  vacationDaysTotal: number
+  vacationDaysUsed: number
+}
+
 export function Dashboard({ user }: DashboardProps) {
   const [stats, setStats] = useState({
     totalDays: 25,
-    usedDays: 8,
-    pendingRequests: 2,
-    approvedRequests: 3
+    usedDays: 0,
+    pendingRequests: 0,
+    approvedRequests: 0
   })
 
-  const [recentRequests, setRecentRequests] = useState<VacationRequest[]>([
-    {
-      id: '1',
-      startDate: '2024-08-15',
-      endDate: '2024-08-19',
-      daysRequested: 5,
-      reason: 'Summer vacation',
-      status: 'approved',
-      createdAt: '2024-07-10'
-    },
-    {
-      id: '2',
-      startDate: '2024-09-02',
-      endDate: '2024-09-02',
-      daysRequested: 1,
-      reason: 'Personal day',
-      status: 'pending',
-      createdAt: '2024-07-15'
-    },
-    {
-      id: '3',
-      startDate: '2024-12-23',
-      endDate: '2024-12-30',
-      daysRequested: 6,
-      reason: 'Holiday break',
-      status: 'pending',
-      createdAt: '2024-07-16'
+  const [recentRequests, setRecentRequests] = useState<VacationRequest[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        // Load employee profile
+        const employees = await blink.db.employees.list({
+          where: { userId: user.id },
+          limit: 1
+        })
+
+        let employee = employees[0]
+        if (!employee) {
+          // Create employee profile if it doesn't exist
+          employee = await blink.db.employees.create({
+            userId: user.id,
+            email: user.email,
+            displayName: user.displayName || user.email.split('@')[0],
+            vacationDaysTotal: 25,
+            vacationDaysUsed: 0,
+            department: 'General',
+            isManager: false
+          })
+        }
+
+        // Load vacation requests
+        const requests = await blink.db.vacationRequests.list({
+          where: { userId: user.id },
+          orderBy: { createdAt: 'desc' },
+          limit: 5
+        })
+
+        // Calculate stats
+        const pendingCount = requests.filter(r => r.status === 'pending').length
+        const approvedCount = requests.filter(r => r.status === 'approved').length
+        const usedDays = requests
+          .filter(r => r.status === 'approved')
+          .reduce((sum, r) => sum + r.daysRequested, 0)
+
+        setStats({
+          totalDays: employee.vacationDaysTotal,
+          usedDays,
+          pendingRequests: pendingCount,
+          approvedRequests: approvedCount
+        })
+
+        setRecentRequests(requests)
+      } catch (error) {
+        console.error('Error loading dashboard data:', error)
+      } finally {
+        setLoading(false)
+      }
     }
-  ])
+
+    if (user?.id) {
+      loadDashboardData()
+    }
+  }, [user?.id, user?.email, user?.displayName])
 
   const remainingDays = stats.totalDays - stats.usedDays
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground mt-2">Loading your vacation overview...</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-6">
+                <div className="animate-pulse">
+                  <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+                  <div className="h-8 bg-muted rounded w-1/2"></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
